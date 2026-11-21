@@ -7,7 +7,7 @@
 
 
 class EvalVisitor : public Python3ParserBaseVisitor {
-	static const int MAXVAR = 1e5+5;
+	static const int MAXVAR = 2e4+5;
 	struct varRef
 	{
 		int ID;
@@ -90,6 +90,7 @@ class EvalVisitor : public Python3ParserBaseVisitor {
 	friend std::any getVal(const std::any&);
 	friend void Print(const std::any&);
 	friend std::string toString(const std::any&);
+	friend bool comp(const std::any&,const std::any&,const std::string&);
 };
 std::string peel(std::string);
 bool toBool(const std::any&);

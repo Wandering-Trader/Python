@@ -33,7 +33,7 @@ std::any EvalVisitor::visitAtom(Python3Parser::AtomContext *ctx)
         for (auto p : vStr)
         {
             std::string tmp = p->getText();
-            res += peel(tmp);
+            res += unescape(peel(tmp));
         }
         return res;
     }
@@ -116,7 +116,7 @@ std::any EvalVisitor::visitAtom_expr(Python3Parser::Atom_exprContext *ctx)
                 hasValue[id] = true;
                 tmpVar.ID = ++numVar;
                 var[numVar] = tmpVar;
-                localVar.insert(make_pair(name,numVar));
+                localVar.insert(make_pair(tmpVar.name,numVar));
             }
             // positional
             else
@@ -345,10 +345,7 @@ std::any EvalVisitor::visitTerm(Python3Parser::TermContext *ctx)
     }
     std::any ans = vFactorRes[0];
     for(int i = 0;i < szTerm;++i)
-    {
-        std::string op = std::any_cast<const std::string&>(visit(vTerm[i]));
-        ans = calc(ans,vFactorRes[i+1],op);
-    }
+        ans = calc(ans,vFactorRes[i+1],Op[i]);
     return ans;
 }
 
@@ -415,7 +412,7 @@ std::any EvalVisitor::visitIf_stmt(Python3Parser::If_stmtContext *ctx)
     int sz = vConditions.size();
     for(int i=0;i<sz;++i)
     {
-        bool res = std::any_cast<bool>(visit(vConditions[i]));
+        bool res = toBool(visit(vConditions[i]));
         if(res)
         {
             std::any val = visit(vSuites[i]);
@@ -690,9 +687,11 @@ bool toBool(const std::any &val)
     if (val.type() == typeid(bool))
         return std::any_cast<const bool &>(val);
     if (val.type() == typeid(double))
-        return fabs(std::any_cast<const double &>(val)) > 1e-6;
+        return fabs(std::any_cast<const double &>(val)) > 1e-8;
     if (val.type() == typeid(EvalVisitor::varRef))
         return toBool(std::any_cast<const EvalVisitor::varRef &>(val).value);
+    if (val.type() == typeid(EvalVisitor::NoneType))
+        return false;
     throw std::runtime_error(std::string("Cannot convert type ") + val.type().name() + " to bool\n");
 }
 
@@ -743,9 +742,9 @@ T toNumeric(const std::any &val)
 bool comp(const std::any &A, const std::any &B, const std::string &op)
 {
     std::any x = getVal(A), y = getVal(B);
-    if (x.type() != typeid(LL) && x.type() != typeid(double) && x.type() != typeid(std::string) && x.type() != typeid(bool))
+    if (x.type() != typeid(LL) && x.type() != typeid(double) && x.type() != typeid(std::string) && x.type() != typeid(bool) && x.type() != typeid(EvalVisitor::NoneType))
         throw std::runtime_error("type x is wrong");
-    if (y.type() != typeid(LL) && y.type() != typeid(double) && y.type() != typeid(std::string) && y.type() != typeid(bool))
+    if (y.type() != typeid(LL) && y.type() != typeid(double) && y.type() != typeid(std::string) && y.type() != typeid(bool) && x.type() != typeid(EvalVisitor::NoneType))
         throw std::runtime_error("type y is wrong");
     if (x.type() == typeid(std::string) || y.type() == typeid(std::string))
     {
@@ -893,7 +892,7 @@ std::any calc(const std::any& A,const std::any& B,const std::string& op)
             if(A.type() == typeid(double) || B.type() == typeid(double))
             {
                 double ans = toNumeric<double>(A) / toNumeric<double>(B);
-                return round(ans);
+                return floor(ans);
             }
             return toNumeric<LL>(A) / toNumeric<LL>(B);
         }
@@ -908,7 +907,7 @@ std::any calc(const std::any& A,const std::any& B,const std::string& op)
             if(A.type() == typeid(double) || B.type() == typeid(double))
             {
                 double doubleA = toNumeric<double>(A), doubleB = toNumeric<double>(B);
-                double quot = round(doubleA / doubleB);
+                double quot = floor(doubleA / doubleB);
                 return doubleA - quot * doubleB;
             }
             return toNumeric<LL>(A) % toNumeric<LL>(B);
