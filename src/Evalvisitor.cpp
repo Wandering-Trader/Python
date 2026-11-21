@@ -687,7 +687,7 @@ void EvalVisitor::Bind(std::any& lhs, const std::any& rhs)
         var[ID].hasValue = true;
     }
     else
-        std::cout << "pass";
+        throw std::runtime_error("shit\n");
 }
 
 std::string peel(const std::string str)
