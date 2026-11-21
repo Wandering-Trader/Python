@@ -1004,6 +1004,8 @@ std::string unescape(const std::string& str,bool fString)
                 res.push_back('\n');
             else if(str[i] == 't')
                 res.push_back('\t');
+            else if(str[i] == 'r')
+                res.push_back('\r');
             // including \", \'
             else
                 res.push_back(str[i]);
