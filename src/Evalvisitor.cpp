@@ -174,6 +174,7 @@ std::any EvalVisitor::visitAtom_expr(Python3Parser::Atom_exprContext *ctx)
     std::any res = visitAtom(ctx->atom());
     if(res.type() == typeid(Func))
     {
+        throw std::runtime_error("shit\n");
         if(scopeDepth == 0)
         {
             // delete the func and add the new variable
