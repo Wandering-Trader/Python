@@ -33,7 +33,7 @@ std::any EvalVisitor::visitAtom(Python3Parser::AtomContext *ctx)
         for (auto p : vStr)
         {
             std::string tmp = p->getText();
-            res += unescape(peel(tmp));
+            res += unescape(peel(tmp),false);
         }
         return res;
     }
@@ -101,6 +101,8 @@ std::any EvalVisitor::visitAtom_expr(Python3Parser::Atom_exprContext *ctx)
         // create new scope
         bool keyword = false;
         int sz = para.size();
+        if(sz > func.vArg.size())
+            throw std::runtime_error("too much argments\n");
         std::vector<bool> hasValue(func.vArg.size());
         for(int i=0;i<sz;++i)
         {
@@ -110,7 +112,10 @@ std::any EvalVisitor::visitAtom_expr(Python3Parser::Atom_exprContext *ctx)
             {
                 keyword = true;
                 varRef tmpVar = std::any_cast<const varRef&>(p);
-                int id = func.mapArg[tmpVar.name];
+                auto it = func.mapArg.find(tmpVar.name);
+                if(it == func.mapArg.end())
+                    throw std::runtime_error("argument not found\n");
+                int id = it->second;
                 if(hasValue[id])
                     throw std::runtime_error("argument reloaded\n");
                 hasValue[id] = true;
@@ -139,7 +144,7 @@ std::any EvalVisitor::visitAtom_expr(Python3Parser::Atom_exprContext *ctx)
                     throw std::runtime_error("arguments without value");
                 ++numVar;
                 var[numVar] = {numVar,func.vArg[i].name,func.vArg[i].value,true};
-                localVar.insert(make_pair(name,numVar));
+                localVar.insert(make_pair(func.vArg[i].name,numVar));
             }
         }
         std::any ret = visit(func.suite);
@@ -359,6 +364,8 @@ std::any EvalVisitor::visitFactor(Python3Parser::FactorContext *ctx)
     if (ctx->factor() != nullptr)
     {
         std::any res = visit(ctx->factor());
+        if(ctx->ADD() != nullptr)
+            return res;
         res = getVal(res);
         if (res.type() == typeid(LL))
             return -std::any_cast<const LL &>(res);
@@ -503,7 +510,7 @@ std::any EvalVisitor::visitFormat_string(Python3Parser::Format_stringContext *ct
                 ++i;
                 continue;
             }
-            ans += unescape(str);
+            ans += unescape(str,true);
         }
     }
     return ans;
@@ -563,6 +570,7 @@ std::any EvalVisitor::visitTypedargslist(Python3Parser::TypedargslistContext *ct
                 std::any val = getVal(visit(vChildren[i]));
                 var.value = val;
                 var.hasValue = true;
+                ++i;
             }
             vArgs.push_back(var);
         }
@@ -687,7 +695,7 @@ bool toBool(const std::any &val)
     if (val.type() == typeid(bool))
         return std::any_cast<const bool &>(val);
     if (val.type() == typeid(double))
-        return fabs(std::any_cast<const double &>(val)) > 1e-8;
+        return fabs(std::any_cast<const double &>(val)) > 1e-14;
     if (val.type() == typeid(EvalVisitor::varRef))
         return toBool(std::any_cast<const EvalVisitor::varRef &>(val).value);
     if (val.type() == typeid(EvalVisitor::NoneType))
@@ -744,7 +752,7 @@ bool comp(const std::any &A, const std::any &B, const std::string &op)
     std::any x = getVal(A), y = getVal(B);
     if (x.type() != typeid(LL) && x.type() != typeid(double) && x.type() != typeid(std::string) && x.type() != typeid(bool) && x.type() != typeid(EvalVisitor::NoneType))
         throw std::runtime_error("type x is wrong");
-    if (y.type() != typeid(LL) && y.type() != typeid(double) && y.type() != typeid(std::string) && y.type() != typeid(bool) && x.type() != typeid(EvalVisitor::NoneType))
+    if (y.type() != typeid(LL) && y.type() != typeid(double) && y.type() != typeid(std::string) && y.type() != typeid(bool) && y.type() != typeid(EvalVisitor::NoneType))
         throw std::runtime_error("type y is wrong");
     if (x.type() == typeid(std::string) || y.type() == typeid(std::string))
     {
@@ -755,6 +763,15 @@ bool comp(const std::any &A, const std::any &B, const std::string &op)
         if (op == "!=")
             return true;
         throw std::runtime_error("exactly one type is string\n");
+    }
+    bool xNone = x.type() == typeid(EvalVisitor::NoneType), yNone = y.type() == typeid(EvalVisitor::NoneType);
+    if(xNone || yNone)
+    {
+        if(op == "==")
+            return xNone && yNone;
+        if(op == "!=")
+            return xNone != yNone;
+        throw std::runtime_error("None cannot be ordered\n");
     }
     if (x.type() == typeid(double) || y.type() == typeid(double))
     {
@@ -803,10 +820,15 @@ void Print(const std::any& x)
     /*TODO*/
 }
 
-double stringToDouble(const std::string& str)
+double stringToDouble(std::string str)
 {
     double base = 1.0,ans = 0;
-    bool dot = false;
+    bool dot = false,neg = false;
+    if(str[0] == '-')
+    {
+        neg = true;
+        str = str.substr(1);
+    }
     for(char c:str)
     {
         if(c == '.')
@@ -822,11 +844,24 @@ double stringToDouble(const std::string& str)
             ans += base * (c - '0');
         }
     }
+    if(neg) ans = -ans;
     return ans;
 }
 
 std::any calc(const std::any& A,const std::any& B,const std::string& op)
 {
+    if(A.type() == typeid(EvalVisitor::Tuple) || B.type() == typeid(EvalVisitor::Tuple))
+    {
+        EvalVisitor::Tuple x = std::any_cast<const EvalVisitor::Tuple&>(A),y = std::any_cast<const EvalVisitor::Tuple&>(B);
+        if(x.size != y.size)
+            throw std::runtime_error("tuples have different sizes");
+        EvalVisitor::Tuple res;
+        res.size = x.size;
+        res.vTuple.clear();
+        for(int i=0;i<res.size;++i)
+            res.vTuple.push_back(calc(x.vTuple[i],y.vTuple[i],op));
+        return res;
+    }
     if(op == "+")
     {
         if(A.type() == typeid(std::string))
@@ -917,7 +952,7 @@ std::any calc(const std::any& A,const std::any& B,const std::string& op)
     throw std::runtime_error("operator not found\n");
 }
 
-std::string unescape(const std::string& str)
+std::string unescape(const std::string& str,bool fString)
 {
     std::string res;
     int len = str.length();
@@ -936,12 +971,12 @@ std::string unescape(const std::string& str)
             else
                 res.push_back(str[i]);
         }
-        else if(str[i] == '{')
+        else if(str[i] == '{' && fString)
         {
             res.push_back('{');
             ++i;
         }
-        else if(str[i] == '}')
+        else if(str[i] == '}' && fString)
         {
             res.push_back('}');
             ++i;

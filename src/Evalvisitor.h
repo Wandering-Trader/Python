@@ -91,6 +91,7 @@ class EvalVisitor : public Python3ParserBaseVisitor {
 	friend void Print(const std::any&);
 	friend std::string toString(const std::any&);
 	friend bool comp(const std::any&,const std::any&,const std::string&);
+	friend std::any calc(const std::any&,const std::any&,const std::string&);
 };
 std::string peel(std::string);
 bool toBool(const std::any&);
@@ -102,8 +103,8 @@ template <typename T>
 T toNumeric(const std::any& val);
 std::string stringMul(const std::any&,const std::any&);
 void Print(const std::any&);
-double stringToDouble(const std::string&);
+double stringToDouble(std::string);
 std::any calc(const std::any&,const std::any&,const std::string&);
-std::string unescape(const std::string&);
+std::string unescape(const std::string&,bool);
 std::string toString(const std::any&);
 #endif//PYTHON_INTERPRETER_EVALVISITOR_H
