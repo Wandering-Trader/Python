@@ -100,8 +100,6 @@ std::any EvalVisitor::visitAtom_expr(Python3Parser::Atom_exprContext *ctx)
             scopeStack.push_back(localVar);
         localVar.clear();
         ++scopeDepth;
-        if(scopeDepth > 2000)
-            std::cout << "pass";
         // create new scope
         bool keyword = false;
         int sz = para.size();
@@ -368,14 +366,18 @@ std::any EvalVisitor::visitFactor(Python3Parser::FactorContext *ctx)
     if (ctx->factor() != nullptr)
     {
         std::any res = visit(ctx->factor());
-        if(ctx->ADD() != nullptr)
-            return res;
         res = getVal(res);
-        if (res.type() == typeid(LL))
-            return -std::any_cast<const LL &>(res);
+        if(ctx->ADD() != nullptr)
+        {
+            if(res.type() != typeid(bool))
+                return res;
+            return toNumeric<LL>(res);
+        }
+        res = getVal(res);
+        if (res.type() == typeid(LL) || res.type() == typeid(bool))
+            return -toNumeric<LL>(res);
         if (res.type() == typeid(double))
             return -std::any_cast<const double &>(res);
-        std::cout << "pass";
     }
     return visit(ctx->atom_expr());
 }
@@ -530,16 +532,21 @@ std::any EvalVisitor::visitFuncdef(Python3Parser::FuncdefContext *ctx)
     std::string funcName = std::any_cast<const std::string&>(visit(ctx->NAME()));
     if(funcName == "print" || funcName == "str" || funcName == "int" || funcName == "float" || funcName == "bool")
         std::cout << "pass";
-    if(mapFunc.count(funcName))
-        std::cout << "pass";
-    ++numFunc;
-    mapFunc.insert(make_pair(funcName,numFunc));
+    auto it = mapFunc.find(funcName);
+    int funcID;
+    if(it == mapFunc.end())
+    {
+        funcID = ++numFunc;
+        mapFunc.insert(make_pair(funcName,funcID));
+    }
+    else
+        funcID = it->second;
     auto vArg = std::any_cast<const std::vector<varRef>&>(visit(ctx->parameters()));
     std::unordered_map<std::string,int> mapArg;
     int sz = vArg.size();
     for(int i=0;i<sz;++i)
         mapArg.insert(make_pair(vArg[i].name,i));
-    func[numFunc] = {numFunc, funcName, mapArg, vArg, ctx->suite()};
+    func[funcID] = {numFunc, funcName, mapArg, vArg, ctx->suite()};
     return std::any();
 }
 
