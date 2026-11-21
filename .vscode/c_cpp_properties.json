@@ -1,0 +1,13 @@
+{
+    "configurations": [
+        {
+            "name": "Linux",
+            "includePath": [
+                "${workspaceFolder}/**",
+                "/usr/include/antlr4-runtime"
+            ],
+            "defines": []
+        }
+    ],
+    "version": 4
+}
