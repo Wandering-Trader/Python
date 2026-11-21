@@ -64,6 +64,8 @@ std::any EvalVisitor::visitAtom_expr(Python3Parser::Atom_exprContext *ctx)
         }
         if(name == "int")
         {
+            if(para.empty())
+                return (LL)0;
             std::any res = getVal(para[0]);
             if(res.type() == typeid(LL))
                 return res;
@@ -77,6 +79,8 @@ std::any EvalVisitor::visitAtom_expr(Python3Parser::Atom_exprContext *ctx)
         }
         if(name == "float")
         {
+            if(para.empty())
+                return 0.0;
             std::any res = getVal(para[0]);
             if(res.type() == typeid(LL) || res.type() == typeid(double) || res.type() == typeid(bool))
                 return toNumeric<double>(res);
@@ -85,9 +89,9 @@ std::any EvalVisitor::visitAtom_expr(Python3Parser::Atom_exprContext *ctx)
             throw std::runtime_error("cannot convert to float\n");
         }
         if(name == "str")
-            return toString(getVal(para[0]));
+            return para.empty() ? "" : toString(getVal(para[0]));
         if(name == "bool")
-            return toBool(getVal(para[0]));
+            return para.empty() ? false : toBool(getVal(para[0]));
         auto func = std::any_cast<const Func&>(visit(ctx->atom()));
         // change scope
         if(scopeDepth == 0)
@@ -695,7 +699,7 @@ bool toBool(const std::any &val)
     if (val.type() == typeid(bool))
         return std::any_cast<const bool &>(val);
     if (val.type() == typeid(double))
-        return fabs(std::any_cast<const double &>(val)) > 1e-14;
+        return fabs(std::any_cast<const double &>(val)) != 0.0;
     if (val.type() == typeid(EvalVisitor::varRef))
         return toBool(std::any_cast<const EvalVisitor::varRef &>(val).value);
     if (val.type() == typeid(EvalVisitor::NoneType))
