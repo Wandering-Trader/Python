@@ -7,7 +7,7 @@
 
 
 class EvalVisitor : public Python3ParserBaseVisitor {
-	static const int MAXVAR = 2e4+5;
+	static const int MAXVAR = 1e5+5;
 	struct varRef
 	{
 		int ID;

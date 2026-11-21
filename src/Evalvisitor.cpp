@@ -96,6 +96,8 @@ std::any EvalVisitor::visitAtom_expr(Python3Parser::Atom_exprContext *ctx)
             scopeStack.push_back(localVar);
         localVar.clear();
         ++scopeDepth;
+        if(scopeDepth > 2000)
+            throw std::runtime_error("too deep\n");
         // create new scope
         bool keyword = false;
         int sz = para.size();
@@ -140,16 +142,7 @@ std::any EvalVisitor::visitAtom_expr(Python3Parser::Atom_exprContext *ctx)
                 localVar.insert(make_pair(name,numVar));
             }
         }
-        // if(func.name == "pollard_rho")
-        // {
-        //     std::cout << "pollard_rho ";
-        //     Print(var[numVar].value);
-        //     std::cout << std::endl;
-        // }
         std::any ret = visit(func.suite);
-        // if(func.name == "pollard_rho")
-        //     std::cout << "end" << std::endl;
-        // restore the scope
         numVar -= localVar.size();
         if(scopeDepth == 1)
             localVar = globalVar;
