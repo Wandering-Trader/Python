@@ -694,7 +694,7 @@ void EvalVisitor::Bind(std::any& lhs, const std::any& rhs)
     if(lhs.type() == typeid(Tuple))
     {
         if(rhs.type() != typeid(Tuple))
-            std::cout << "pass";
+            return;
         Tuple L = std::any_cast<const Tuple&>(lhs), R = std::any_cast<const Tuple&>(rhs);
         int szL = L.vTuple.size(), szR = R.vTuple.size();
         if(szL != szR)
