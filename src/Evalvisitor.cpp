@@ -824,15 +824,12 @@ void Print(const std::any& x)
     /*TODO*/
 }
 
-double stringToDouble(std::string str)
+double stringToDouble(const std::string& str)
 {
     double base = 1.0,ans = 0;
     bool dot = false,neg = false;
     if(str[0] == '-')
-    {
-        neg = true;
-        str = str.substr(1);
-    }
+        return -stringToDouble(str.substr(1));
     for(char c:str)
     {
         if(c == '.')
@@ -840,6 +837,8 @@ double stringToDouble(std::string str)
             dot = true;
             continue;
         }
+        if(!isdigit(c))
+            continue;
         if(!dot)
             ans = ans * 10 + c - '0';
         else
