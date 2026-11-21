@@ -168,7 +168,28 @@ std::any EvalVisitor::visitAtom_expr(Python3Parser::Atom_exprContext *ctx)
             return NoneType();
         }
     }
-    return visit(ctx->atom());
+    std::any res = visitAtom(ctx->atom());
+    if(res.type() == typeid(Func))
+    {
+        if(scopeDepth == 0)
+        {
+            // delete the func and add the new variable
+            std::string name = std::any_cast<Func>(res).name;
+            mapFunc.erase(name);
+            localVar.insert(make_pair(name,++numVar));
+            var[numVar] = {numVar,name,std::any(),false};
+            return var[numVar];
+        }
+        else
+        {
+            // don't delete the func, just add the new variable
+            std::string name = std::any_cast<Func>(res).name;
+            localVar.insert(make_pair(name,++numVar));
+            var[numVar] = {numVar,name,std::any(),false};
+            return var[numVar];
+        }
+    }
+    return res;
 }
 
 std::any EvalVisitor::visitTrailer(Python3Parser::TrailerContext *ctx)
@@ -532,6 +553,7 @@ std::any EvalVisitor::visitFuncdef(Python3Parser::FuncdefContext *ctx)
     std::string funcName = std::any_cast<const std::string&>(visit(ctx->NAME()));
     if(funcName == "print" || funcName == "str" || funcName == "int" || funcName == "float" || funcName == "bool")
         std::cout << "pass";
+    localVar.erase(funcName);
     auto it = mapFunc.find(funcName);
     int funcID;
     if(it == mapFunc.end())
@@ -686,8 +708,12 @@ void EvalVisitor::Bind(std::any& lhs, const std::any& rhs)
         var[ID].value = rhs;
         var[ID].hasValue = true;
     }
-    else
-        throw std::runtime_error("shit\n");
+    else if(lhs.type() == typeid(func))
+    {
+        // delete this func and create a variable instead
+
+    }
+        
 }
 
 std::string peel(const std::string str)
