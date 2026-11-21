@@ -140,8 +140,17 @@ std::any EvalVisitor::visitAtom_expr(Python3Parser::Atom_exprContext *ctx)
                 localVar.insert(make_pair(name,numVar));
             }
         }
+        // if(func.name == "pollard_rho")
+        // {
+        //     std::cout << "pollard_rho ";
+        //     Print(var[numVar].value);
+        //     std::cout << std::endl;
+        // }
         std::any ret = visit(func.suite);
+        // if(func.name == "pollard_rho")
+        //     std::cout << "end" << std::endl;
         // restore the scope
+        numVar -= localVar.size();
         if(scopeDepth == 1)
             localVar = globalVar;
         else
@@ -195,8 +204,6 @@ std::any EvalVisitor::visitTest(Python3Parser::TestContext *context)
 {
 #ifdef DEBUG
     auto val = visit(context->or_test());
-    // Print(val);
-    // std::cout << std::endl;
     return val;
 #endif
     return visit(context->or_test());
@@ -289,9 +296,6 @@ std::any EvalVisitor::visitComp_op(Python3Parser::Comp_opContext *ctx)
 
 std::any EvalVisitor::visitArith_expr(Python3Parser::Arith_exprContext *ctx)
 {
-#ifdef DEBUG
-    // std::cout << "visitArith_expr" << std::endl;
-#endif
     int szArith = ctx->addorsub_op().size();
     auto vTerm = ctx->term();
     auto vArith = ctx->addorsub_op();
@@ -365,6 +369,7 @@ std::any EvalVisitor::visitFactor(Python3Parser::FactorContext *ctx)
     if (ctx->factor() != nullptr)
     {
         std::any res = visit(ctx->factor());
+        res = getVal(res);
         if (res.type() == typeid(LL))
             return -std::any_cast<const LL &>(res);
         if (res.type() == typeid(double))
@@ -419,7 +424,11 @@ std::any EvalVisitor::visitIf_stmt(Python3Parser::If_stmtContext *ctx)
     {
         bool res = std::any_cast<bool>(visit(vConditions[i]));
         if(res)
-            return visit(vSuites[i]);
+        {
+            std::any val = visit(vSuites[i]);
+            return val;
+
+        }
     }
     if(ctx->ELSE() != nullptr)
         return visit(vSuites.back());
@@ -429,25 +438,21 @@ std::any EvalVisitor::visitIf_stmt(Python3Parser::If_stmtContext *ctx)
 std::any EvalVisitor::visitCompound_stmt(Python3Parser::Compound_stmtContext *ctx)
 {
     if(ctx->if_stmt() != nullptr)
-    {
-        visit(ctx->if_stmt());
-        return std::any();
-    }
+        return visit(ctx->if_stmt());
     if(ctx->while_stmt() != nullptr)
-    {
-        visit(ctx->while_stmt());
-        return std::any();
-    }
+        return visit(ctx->while_stmt());
     if(ctx->funcdef() != nullptr)
-    {
-        visit(ctx->funcdef());
-        return std::any();
-    }
-    return std::any();
+        return visit(ctx->funcdef());
+    return (Flow){0};
 }
 
 std::any EvalVisitor::visitSuite(Python3Parser::SuiteContext *ctx)
 {
+    if(ctx->simple_stmt() != nullptr)
+    {
+        std::any val = visit(ctx->simple_stmt());
+        return val;
+    }
     auto vStmt = ctx->stmt();
     for(auto& p : vStmt)
     {
@@ -467,7 +472,7 @@ std::any EvalVisitor::visitWhile_stmt(Python3Parser::While_stmtContext *ctx)
 {
     auto pSuite = ctx->suite();
     auto pTest = ctx->test();
-    while(std::any_cast<bool>(visit(pTest)))
+    while(toBool(visit(pTest)))
     {
         std::any ret = visit(pSuite);
         if(ret.type() == typeid(Flow))
@@ -596,10 +601,47 @@ std::any EvalVisitor::visitReturn_stmt(Python3Parser::Return_stmtContext *ctx)
 {
     if(ctx->testlist() == nullptr)
         return (Flow){3};
-    return (Flow){4,visit(ctx->testlist())};
+    std::any x = visit(ctx->testlist());
+    return (Flow){4,x};
 }
 
-std::any EvalVisitor::findName(const std::string& name)
+std::any EvalVisitor::visitStmt(Python3Parser::StmtContext *ctx)
+{
+    if(ctx->simple_stmt() != nullptr)
+        return visit(ctx->simple_stmt());
+    if(ctx->compound_stmt() != nullptr)
+        return visit(ctx->compound_stmt());
+    return std::any();
+}
+
+std::any EvalVisitor::visitSimple_stmt(Python3Parser::Simple_stmtContext *ctx)
+{
+    if(ctx->small_stmt() != nullptr)
+        return visit(ctx->small_stmt());
+    return std::any();
+}
+
+std::any EvalVisitor::visitSmall_stmt(Python3Parser::Small_stmtContext *ctx)
+{
+    if(ctx->expr_stmt() != nullptr)
+        return visit(ctx->expr_stmt());
+    if(ctx->flow_stmt() != nullptr)
+        return visit(ctx->flow_stmt());
+    return std::any();
+}
+
+std::any EvalVisitor::visitFlow_stmt(Python3Parser::Flow_stmtContext *ctx)
+{
+    if(ctx->return_stmt() != nullptr)
+        return visit(ctx->return_stmt());
+    if(ctx->break_stmt() != nullptr)
+        return visit(ctx->break_stmt());
+    if(ctx->continue_stmt() != nullptr)
+        return visit(ctx->continue_stmt());
+    return std::any();
+}
+
+std::any EvalVisitor::findName(const std::string &name)
 {
     auto it = localVar.find(name);
     if(it != localVar.end())

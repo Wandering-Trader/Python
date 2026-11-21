@@ -7,7 +7,7 @@
 
 
 class EvalVisitor : public Python3ParserBaseVisitor {
-	static const int MAXVAR = 2000;
+	static const int MAXVAR = 2e4+5;
 	struct varRef
 	{
 		int ID;
@@ -80,6 +80,10 @@ class EvalVisitor : public Python3ParserBaseVisitor {
 	std::any visitBreak_stmt(Python3Parser::Break_stmtContext *ctx) override;
 	std::any visitContinue_stmt(Python3Parser::Continue_stmtContext *ctx) override;
 	std::any visitReturn_stmt(Python3Parser::Return_stmtContext *ctx) override;
+	std::any visitStmt(Python3Parser::StmtContext *ctx) override;
+	std::any visitSimple_stmt(Python3Parser::Simple_stmtContext *ctx) override;
+	std::any visitSmall_stmt(Python3Parser::Small_stmtContext *ctx) override;
+	std::any visitFlow_stmt(Python3Parser::Flow_stmtContext *ctx) override;
 	std::any findName(const std::string&);
 	void Bind(std::any&,const std::any&);
 	friend bool toBool(const std::any&);
