@@ -708,11 +708,6 @@ void EvalVisitor::Bind(std::any& lhs, const std::any& rhs)
         var[ID].value = rhs;
         var[ID].hasValue = true;
     }
-    else if(lhs.type() == typeid(func))
-    {
-        // delete this func and create a variable instead
-
-    }
         
 }
 
