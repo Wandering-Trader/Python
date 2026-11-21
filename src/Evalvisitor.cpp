@@ -92,7 +92,10 @@ std::any EvalVisitor::visitAtom_expr(Python3Parser::Atom_exprContext *ctx)
             return para.empty() ? "" : toString(getVal(para[0]));
         if(name == "bool")
             return para.empty() ? false : toBool(getVal(para[0]));
-        auto func = std::any_cast<const Func&>(visit(ctx->atom()));
+        std::any res = visit(ctx->atom());
+        if(res.type() != typeid(Func))
+            return std::any();
+        auto func = std::any_cast<const Func&>(res);
         // change scope
         if(scopeDepth == 0)
             globalVar = localVar;
@@ -883,6 +886,8 @@ std::any calc(const std::any& A,const std::any& B,const std::string& op)
 {
     if(A.type() == typeid(EvalVisitor::Tuple) || B.type() == typeid(EvalVisitor::Tuple))
     {
+        if(A.type != typeid(EvalVisitor::Tuple) || B.type() != typeid(EvalVisitor::Tuple))
+            return std::any();
         EvalVisitor::Tuple x = std::any_cast<const EvalVisitor::Tuple&>(A),y = std::any_cast<const EvalVisitor::Tuple&>(B);
         if(x.size != y.size)
             std::cout << "pass";
