@@ -415,18 +415,19 @@ std::any EvalVisitor::visitExpr_stmt(Python3Parser::Expr_stmtContext *ctx)
         auto vTestlist = ctx->testlist();
         int sz = vTestlist.size();
         std::vector<std::any> vTerm;
-        for(auto& t : vTestlist)
-        {
-            auto res = visit(t);
-            vTerm.push_back(res);
-        }
         if(sz == 1)
-            return vTerm[0];
-        auto res = vTerm.back();
-        res = getVal(res);
-        for(int i = 0;i < sz - 1; ++i)
-            Bind(vTerm[i],res);
-        return vTerm[0];
+            return visit(vTestlist[0]);
+
+        // calculate from right to left
+        std::any val = visit(vTestlist.back());
+        std::any res;
+        val = getVal(val);
+        for(int i = sz - 2; ~i; --i)
+        {
+            res = visit(vTestlist[i]);
+            Bind(res,val);
+        }
+        return res;
     }
     // augassign
     else
