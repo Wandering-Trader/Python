@@ -4,26 +4,14 @@
 using LL = sjtu::int2048;
 std::any EvalVisitor::visitAtom(Python3Parser::AtomContext *ctx)
 {
-#ifdef DEBUG
-    // std::cout << "visitAtom" << std::endl;
-#endif
     if (ctx->NAME() != nullptr)
     {
-#ifdef DEBUG
-        // std::cout << "name" << std::endl;
-#endif
         std::string name = ctx->NAME()->getText();
-        int varID = findVariable(name);
-        varRef x = {varID, name};
-        return x;
+        return findName(name);
     }
     if (ctx->NUMBER() != nullptr)
     {
         std::string val = ctx->NUMBER()->getText();
-#ifdef DEBUG
-        // std::cout << "number" << std::endl;
-        // std::cout << val << std::endl;
-#endif
         if(val.find('.') != val.npos)
         {
             double x = stringToDouble(val);
@@ -33,9 +21,7 @@ std::any EvalVisitor::visitAtom(Python3Parser::AtomContext *ctx)
         return x;
     }
     if (ctx->NONE() != nullptr)
-    {
         return NoneType();
-    }
     if (ctx->TRUE() != nullptr)
         return true;
     if (ctx->FALSE() != nullptr)
@@ -52,13 +38,9 @@ std::any EvalVisitor::visitAtom(Python3Parser::AtomContext *ctx)
         return res;
     }
     if (ctx->OPEN_PAREN() != nullptr)
-    {
         return visitTest(ctx->test());
-    }
     if (ctx->format_string() != nullptr)
-    {
-        /*TODO*/
-    }
+        return visit(ctx->format_string());
     return std::any();
 }
 
@@ -66,30 +48,124 @@ std::any EvalVisitor::visitAtom_expr(Python3Parser::Atom_exprContext *ctx)
 {
     if (ctx->trailer() != nullptr)
     {
-        auto para = std::any_cast<std::vector<std::any>>(visitTrailer(ctx->trailer()));
-        if(ctx->atom()->getText() == "print")
+        auto para = std::any_cast<std::vector<std::any>>(visit(ctx->trailer()));
+        std::string name = ctx->atom()->getText();
+        if(name == "print")
         {
-            for(auto& p : para)
+            int sz = para.size();
+            for(int i=0;i<sz;++i)
             {
-                p = getVal(p);
-                Print(p);
-                std::cout << " ";
+                Print(para[i]);
+                if(i != sz - 1)
+                    std::cout << " ";
             }
             std::cout << "\n";
-            return std::any();
+            return (Flow){0};
         }
-        auto funcName = visitAtom(ctx->atom());
-        /*TODO*/
+        if(name == "int")
+        {
+            std::any res = getVal(para[0]);
+            if(res.type() == typeid(LL))
+                return res;
+            if(res.type() == typeid(double))
+                return static_cast<LL>(std::any_cast<double>(res));
+            if(res.type() == typeid(bool))
+                return static_cast<LL>(std::any_cast<bool>(res));
+            if(res.type() == typeid(std::string))
+                return LL(std::any_cast<const std::string&>(res));
+            throw std::runtime_error("cannot convert to int\n");
+        }
+        if(name == "float")
+        {
+            std::any res = getVal(para[0]);
+            if(res.type() == typeid(LL) || res.type() == typeid(double) || res.type() == typeid(bool))
+                return toNumeric<double>(res);
+            if(res.type() == typeid(std::string))
+                return stringToDouble(std::any_cast<const std::string&>(res));
+            throw std::runtime_error("cannot convert to float\n");
+        }
+        if(name == "str")
+            return toString(getVal(para[0]));
+        if(name == "bool")
+            return toBool(getVal(para[0]));
+        auto func = std::any_cast<const Func&>(visit(ctx->atom()));
+        // change scope
+        if(scopeDepth == 0)
+            globalVar = localVar;
+        else
+            scopeStack.push_back(localVar);
+        localVar.clear();
+        ++scopeDepth;
+        // create new scope
+        bool keyword = false;
+        int sz = para.size();
+        std::vector<bool> hasValue(func.vArg.size());
+        for(int i=0;i<sz;++i)
+        {
+            // keyword
+            auto& p = para[i];
+            if(p.type() == typeid(varRef))
+            {
+                keyword = true;
+                varRef tmpVar = std::any_cast<const varRef&>(p);
+                int id = func.mapArg[tmpVar.name];
+                if(hasValue[id])
+                    throw std::runtime_error("argument reloaded\n");
+                hasValue[id] = true;
+                tmpVar.ID = ++numVar;
+                var[numVar] = tmpVar;
+                localVar.insert(make_pair(name,numVar));
+            }
+            // positional
+            else
+            {
+                if(keyword)
+                    throw std::runtime_error("keyword argument before positional argument\n");
+                std::string name = func.vArg[i].name;
+                ++numVar;
+                var[numVar] = {numVar,name,p};
+                localVar.insert(make_pair(name,numVar));
+                hasValue[i] = true;
+            }
+        }
+        int szArgs = func.vArg.size();
+        for(int i=0;i<szArgs;++i)
+        {
+            if(!hasValue[i])
+            {
+                if(!func.vArg[i].hasValue)
+                    throw std::runtime_error("arguments without value");
+                ++numVar;
+                var[numVar] = {numVar,func.vArg[i].name,func.vArg[i].value,true};
+                localVar.insert(make_pair(name,numVar));
+            }
+        }
+        std::any ret = visit(func.suite);
+        // restore the scope
+        if(scopeDepth == 1)
+            localVar = globalVar;
+        else
+        {
+            localVar = scopeStack.back();
+            scopeStack.pop_back();
+        }
+        --scopeDepth;
+        // process return value
+        if(ret.type() == typeid(Flow))
+        {
+            Flow flow = std::any_cast<const Flow&>(ret);
+            if(flow.state == 4)
+                return getVal(flow.value);
+            return NoneType();
+        }
     }
-    else
-        return visitAtom(ctx->atom());
-    return std::any();
+    return visit(ctx->atom());
 }
 
 std::any EvalVisitor::visitTrailer(Python3Parser::TrailerContext *ctx)
 {
     if (ctx->arglist() != nullptr)
-        return visitArglist(ctx->arglist());
+        return visit(ctx->arglist());
     return std::vector<std::any>();
 }
 
@@ -97,28 +173,55 @@ std::any EvalVisitor::visitArglist(Python3Parser::ArglistContext *ctx)
 {
     std::vector<std::any> args;
     for (auto arg : ctx->argument())
-        args.push_back(visitArgument(arg));
+        args.push_back(visit(arg));
     return args;
 }
 
 std::any EvalVisitor::visitArgument(Python3Parser::ArgumentContext *ctx)
 {
     auto p = ctx->test();
+    // pure value
     if(p.size() == 1)
-        return visitTest(p[0]);
-    /*TODO*/
-    return std::any();
+        return getVal(visit(p[0]));
+    // keyword and value
+    varRef var;
+    var.name = p[0]->getText();
+    var.value = getVal(visit(p[1]));
+    var.hasValue = true;
+    return var;
 }
 
 std::any EvalVisitor::visitTest(Python3Parser::TestContext *context)
 {
 #ifdef DEBUG
-    auto val = visitOr_test(context->or_test());
+    auto val = visit(context->or_test());
     // Print(val);
     // std::cout << std::endl;
     return val;
 #endif
-    return visitOr_test(context->or_test());
+    return visit(context->or_test());
+}
+
+std::any EvalVisitor::visitTestlist(Python3Parser::TestlistContext *ctx)
+{
+    auto vTest = ctx->test();
+    std::vector<std::any> resTest;
+    for(auto& p:vTest)
+        resTest.push_back(visit(p));
+    int sz = vTest.size();
+    if(sz == 1)
+        return resTest[0];
+    Tuple t;
+    t.size = sz;
+    t.vTuple.clear();
+    for(auto& p:resTest)
+        t.vTuple.push_back(p);
+    return t;
+}
+
+std::any EvalVisitor::visitAugassign(Python3Parser::AugassignContext *ctx)
+{
+    return ctx->getText();
 }
 
 std::any EvalVisitor::visitOr_test(Python3Parser::Or_testContext *ctx)
@@ -126,10 +229,10 @@ std::any EvalVisitor::visitOr_test(Python3Parser::Or_testContext *ctx)
     auto vAndTest = ctx->and_test();
     int szAndTest = vAndTest.size();
     if (szAndTest == 1)
-        return visitAnd_test(vAndTest[0]);
+        return visit(vAndTest[0]);
     for (int i = 0; i < szAndTest; ++i)
     {
-        auto val = getVal(visitAnd_test(vAndTest[i]));
+        auto val = getVal(visit(vAndTest[i]));
         if (toBool(val))
             return true;
     }
@@ -141,10 +244,10 @@ std::any EvalVisitor::visitAnd_test(Python3Parser::And_testContext *ctx)
     auto vNotTest = ctx->not_test();
     int szNotTest = vNotTest.size();
     if (szNotTest == 1)
-        return visitNot_test(vNotTest[0]);
+        return visit(vNotTest[0]);
     for (int i = 0; i < szNotTest; ++i)
     {
-        auto Val = getVal(visitNot_test(vNotTest[i]));
+        auto Val = getVal(visit(vNotTest[i]));
         if (!toBool(Val))
             return false;
     }
@@ -154,8 +257,8 @@ std::any EvalVisitor::visitAnd_test(Python3Parser::And_testContext *ctx)
 std::any EvalVisitor::visitNot_test(Python3Parser::Not_testContext *ctx)
 {
     if (ctx->NOT() != nullptr)
-        return !toBool(getVal(visitNot_test(ctx->not_test())));
-    return visitComparison(ctx->comparison());
+        return !toBool(getVal(visit(ctx->not_test())));
+    return visit(ctx->comparison());
 }
 
 std::any EvalVisitor::visitComparison(Python3Parser::ComparisonContext *ctx)
@@ -165,13 +268,13 @@ std::any EvalVisitor::visitComparison(Python3Parser::ComparisonContext *ctx)
     auto vArith = ctx->arith_expr();
     int szArith = vArith.size();
     if (!szOp)
-        return visitArith_expr(vArith[0]);
-    auto nodeLHS = visitArith_expr(vArith[0]);
+        return visit(vArith[0]);
+    auto nodeLHS = visit(vArith[0]);
     for (int i = 0; i < szOp; ++i)
     {
-        auto nodeOp = visitComp_op(vCompOp[i]);
+        auto nodeOp = visit(vCompOp[i]);
         std::string op = std::any_cast<const std::string &>(nodeOp);
-        auto nodeRHS = visitArith_expr(vArith[i + 1]);
+        auto nodeRHS = visit(vArith[i + 1]);
         if (!comp(nodeLHS, nodeRHS, op))
             return false;
         nodeLHS = nodeRHS;
@@ -192,75 +295,24 @@ std::any EvalVisitor::visitArith_expr(Python3Parser::Arith_exprContext *ctx)
     int szArith = ctx->addorsub_op().size();
     auto vTerm = ctx->term();
     auto vArith = ctx->addorsub_op();
-    std::any res = visitTerm(vTerm[0]);
+    std::any res = visit(vTerm[0]);
     if (szArith == 0)
         return res;
-    bool isDouble = false;
     std::vector<std::any> vArithRes;
     // preprocess the first vertex
     res = getVal(res);
     vArithRes.push_back(res);
-    if(res.type() == typeid(double))
-        isDouble = true;
     // now process the following ones
     for (int i = 1; i < szArith + 1; ++i)
     {
-        auto val = getVal(visitTerm(vTerm[i]));
+        auto val = getVal(visit(vTerm[i]));
         vArithRes.push_back(val);
-        if(val.type() == typeid(double))
-            isDouble = true;
     }
-#ifdef DEBUG
-    // if(res.type() == typeid(LL))
-    //     std::cout << "LL" << std::endl;
-    // if(res.type() == typeid(std::any))
-    //     std::cout << "any" << std::endl;
-    // if(res.type() == typeid(std::string))
-    //     std::cout << "string" << std::endl; 
-    // if(res.type() == typeid(double))
-    //     std::cout << "double" << std::endl; 
-#endif
-    // string plus
-    if (res.type() == typeid(std::string))
-    {
-        std::string ans = std::any_cast<const std::string&>(res);
-        for (int i = 0; i < szArith; ++i)
-        {
-            std::string op = std::any_cast<const std::string&>(visitAddorsub_op(vArith[i]));
-            if (op == "+")
-            {
-                auto rhs = getVal(visitTerm(vTerm[i+1]));
-                if(rhs.type() != typeid(std::string))
-                    throw std::runtime_error("string add non-string\n");
-                ans += std::any_cast<const std::string&>(rhs);
-            }
-            else
-                throw std::runtime_error("string minus\n");
-        }
-        return ans;
-    }
-    // number plus or minus
-    if(isDouble)
-    {
-        double ans = toNumeric<double>(vArithRes[0]);
-        for(int i = 0;i < szArith;++i)
-        {
-            std::string op = std::any_cast<const std::string&>(visitAddorsub_op(vArith[i]));
-            if(op == "+")
-                ans += toNumeric<double>(vArithRes[i+1]);
-            else
-                ans -= toNumeric<double>(vArithRes[i+1]);
-        }
-        return ans;
-    }
-    LL ans = toNumeric<LL>(vArithRes[0]);
+    std::any ans = vArithRes[0];
     for(int i = 0;i < szArith;++i)
     {
-        std::string op = std::any_cast<const std::string&>(visitAddorsub_op(vArith[i]));
-        if(op == "+")
-            ans += toNumeric<LL>(vArithRes[i+1]);
-        else
-            ans -= toNumeric<LL>(vArithRes[i+1]);
+        std::string op = std::any_cast<const std::string&>(visit(vArith[i]));
+        ans = calc(ans,vArithRes[i+1],op);
     }
     return ans;
 }
@@ -275,85 +327,30 @@ std::any EvalVisitor::visitTerm(Python3Parser::TermContext *ctx)
     auto vTerm = ctx->muldivmod_op();
     int szTerm = vTerm.size();
     auto vFactor = ctx->factor();
-    std::any res0 = visitFactor(vFactor[0]);
+    std::any res0 = visit(vFactor[0]);
     if (szTerm == 0)
         return res0;
-    bool isDouble = false;
     std::vector<std::any> vFactorRes;
     std::vector<std::string> Op;
     // preprocess res0
     res0 = getVal(res0);
     vFactorRes.push_back(res0);
-    if(typeid(res0) == typeid(double))
-        isDouble = true;
     // now process the following ones
     for (int i = 1; i < szTerm + 1; ++i)
     {
-        auto val = getVal(visitFactor(vFactor[i]));
+        auto val = getVal(visit(vFactor[i]));
         vFactorRes.push_back(val);
-        if(val.type() == typeid(double))
-            isDouble = true;
     }
-    std::any res1 = vFactorRes[1];
-    if (res0.type() == typeid(std::string) || res1.type() == typeid(std::string))
-    {
-        if(szTerm > 1)
-            throw std::runtime_error("too much terms\n");
-        if(res0.type() != typeid(std::string))
-            swap(res0,res1);
-        std::string op = std::any_cast<std::string>(visitMuldivmod_op(ctx->muldivmod_op()[0]));
-        return stringMul(res0,res1,op);
-    }
-#ifdef DEBUG
-    // std::cout << szTerm << " " << isDouble << std::endl;
-    for(int i=0;i<szTerm+1;++i)
-    {
-        Print(vFactorRes[i]);
-        std::cout << std::endl;
-    }
-#endif
     for(int i=0;i<szTerm;++i)
     {
-        std::string op = std::any_cast<const std::string&>(visitMuldivmod_op(vTerm[i]));
+        std::string op = std::any_cast<const std::string&>(visit(vTerm[i]));
         Op.push_back(op);
-        if(op == "/")
-            isDouble = true;
     }
-    if(isDouble)
-    {
-        double ans = toNumeric<double>(vFactorRes[0]);
-        for(int i = 0;i < szTerm;++i)
-        {
-            std::string op = std::any_cast<const std::string&>(visitMuldivmod_op(vTerm[i]));
-            if(op == "*")
-                ans *= toNumeric<double>(vFactorRes[i+1]);
-            else if(op == "/")
-                ans /= toNumeric<double>(vFactorRes[i+1]);
-            else if(op == "//")
-            {
-                ans /= toNumeric<double>(vFactorRes[i+1]);
-                ans = floor(ans);
-            }
-            else
-            {
-                double div = toNumeric<double>(vFactorRes[i+1]);
-                double quot = ans / div;
-                quot = floor(quot);
-                ans = ans - quot * div;
-            }
-        }
-        return ans;
-    }
-    LL ans = toNumeric<LL>(vFactorRes[0]);
+    std::any ans = vFactorRes[0];
     for(int i = 0;i < szTerm;++i)
     {
-        std::string op = Op[i];
-        if(op == "*")
-            ans *= toNumeric<LL>(vFactorRes[i+1]);
-        else if(op == "//")
-            ans /= toNumeric<LL>(vFactorRes[i+1]);
-        else
-            ans %= toNumeric<LL>(vFactorRes[i+1]);
+        std::string op = std::any_cast<const std::string&>(visit(vTerm[i]));
+        ans = calc(ans,vFactorRes[i+1],op);
     }
     return ans;
 }
@@ -367,20 +364,279 @@ std::any EvalVisitor::visitFactor(Python3Parser::FactorContext *ctx)
 {
     if (ctx->factor() != nullptr)
     {
-        std::any res = visitFactor(ctx->factor());
+        std::any res = visit(ctx->factor());
         if (res.type() == typeid(LL))
             return -std::any_cast<const LL &>(res);
         if (res.type() == typeid(double))
             return -std::any_cast<const double &>(res);
         throw std::runtime_error("'-' before non-number\n");
     }
-    return visitAtom_expr(ctx->atom_expr());
+    return visit(ctx->atom_expr());
 }
 
-int findVariable(std::string name)
+std::any EvalVisitor::visitExpr_stmt(Python3Parser::Expr_stmtContext *ctx)
 {
-    /*TODO*/
-    return 0;
+    // "=" 
+    if(ctx->augassign() == nullptr)
+    {
+        auto vTestlist = ctx->testlist();
+        int sz = vTestlist.size();
+        std::vector<std::any> vTerm;
+        for(auto& t : vTestlist)
+        {
+            auto res = visit(t);
+            vTerm.push_back(res);
+        }
+        if(sz == 1)
+            return vTerm[0];
+        auto res = vTerm.back();
+        res = getVal(res);
+        for(int i = 0;i < sz - 1; ++i)
+            Bind(vTerm[i],res);
+        return vTerm[0];
+    }
+    // augassign
+    else
+    {
+        auto vTestlist = ctx->testlist();
+        std::any res0 = visit(vTestlist[0]), res1 = visit(vTestlist[1]);
+        std::string op = std::any_cast<std::string>(visit(ctx->augassign()));
+        op.pop_back();
+        std::any res = calc(getVal(res0),getVal(res1),op);
+        Bind(res0,res);
+    }
+    return std::any();
+}
+
+std::any EvalVisitor::visitIf_stmt(Python3Parser::If_stmtContext *ctx)
+{
+    if(ctx->IF() == nullptr)
+        return std::any();
+    auto vConditions = ctx->test();
+    auto vSuites = ctx->suite();
+    int sz = vConditions.size();
+    for(int i=0;i<sz;++i)
+    {
+        bool res = std::any_cast<bool>(visit(vConditions[i]));
+        if(res)
+            return visit(vSuites[i]);
+    }
+    if(ctx->ELSE() != nullptr)
+        return visit(vSuites.back());
+    return (Flow){0};
+}
+
+std::any EvalVisitor::visitCompound_stmt(Python3Parser::Compound_stmtContext *ctx)
+{
+    if(ctx->if_stmt() != nullptr)
+    {
+        visit(ctx->if_stmt());
+        return std::any();
+    }
+    if(ctx->while_stmt() != nullptr)
+    {
+        visit(ctx->while_stmt());
+        return std::any();
+    }
+    if(ctx->funcdef() != nullptr)
+    {
+        visit(ctx->funcdef());
+        return std::any();
+    }
+    return std::any();
+}
+
+std::any EvalVisitor::visitSuite(Python3Parser::SuiteContext *ctx)
+{
+    auto vStmt = ctx->stmt();
+    for(auto& p : vStmt)
+    {
+        std::any ret = visit(p);
+        if(ret.type() == typeid(Flow))
+        {
+            Flow flow = std::any_cast<const Flow&>(ret);
+            // if not zero then should quit
+            if(flow.state)
+                return flow;
+        }
+    }
+    return (Flow){0};
+}
+
+std::any EvalVisitor::visitWhile_stmt(Python3Parser::While_stmtContext *ctx)
+{
+    auto pSuite = ctx->suite();
+    auto pTest = ctx->test();
+    while(std::any_cast<bool>(visit(pTest)))
+    {
+        std::any ret = visit(pSuite);
+        if(ret.type() == typeid(Flow))
+        {
+            Flow flow = std::any_cast<const Flow&>(ret);
+            // break
+            if(flow.state == 1)
+                break;
+            // continue
+            if(flow.state == 2)
+                continue;
+            if(flow.state == 3 || flow.state == 4)
+                return flow;
+        }
+    }
+    return (Flow){0};
+}
+
+std::any EvalVisitor::visitFormat_string(Python3Parser::Format_stringContext *ctx)
+{
+    auto vChildren = ctx->children;
+    int sz = vChildren.size();
+    std::string ans;
+    for(int i = 1;i < sz - 1;++i)
+    {
+        auto p = vChildren[i];
+        std::any res = visit(p);
+        if(res.type() == typeid(std::string))
+        {
+            std::string str = std::any_cast<std::string>(res);
+            if(str == "{")
+            {
+                ++i;
+                p = vChildren[i];
+                std::any resP = visit(p);
+                resP = getVal(resP);
+                ans += toString(resP);
+                ++i;
+                continue;
+            }
+            ans += unescape(str);
+        }
+    }
+    return ans;
+}
+
+std::any EvalVisitor::visitTerminal(antlr4::tree::TerminalNode* node)
+{
+    return node->getText();
+}
+
+std::any EvalVisitor::visitFuncdef(Python3Parser::FuncdefContext *ctx)
+{
+    std::string funcName = std::any_cast<const std::string&>(visit(ctx->NAME()));
+    if(funcName == "print" || funcName == "str" || funcName == "int" || funcName == "float" || funcName == "bool")
+        throw std::runtime_error("function reloaded\n");
+    if(mapFunc.count(funcName))
+        throw std::runtime_error("function reloaded\n");
+    ++numFunc;
+    mapFunc.insert(make_pair(funcName,numFunc));
+    auto vArg = std::any_cast<const std::vector<varRef>&>(visit(ctx->parameters()));
+    std::unordered_map<std::string,int> mapArg;
+    int sz = vArg.size();
+    for(int i=0;i<sz;++i)
+        mapArg.insert(make_pair(vArg[i].name,i));
+    func[numFunc] = {numFunc, funcName, mapArg, vArg, ctx->suite()};
+    return std::any();
+}
+
+std::any EvalVisitor::visitParameters(Python3Parser::ParametersContext *ctx)
+{
+    if(ctx->typedargslist() == nullptr)
+        return std::vector<varRef>();
+    return visit(ctx->typedargslist());
+}
+
+std::any EvalVisitor::visitTypedargslist(Python3Parser::TypedargslistContext *ctx)
+{
+    std::vector<varRef> vArgs;
+    auto vChildren = ctx->children;
+    int sz = vChildren.size();
+    varRef var;
+    for(int i=0;i<sz;++i)
+    {
+        std::any res = visit(vChildren[i]);
+        std::string name = std::any_cast<const std::string&>(res);
+        ++i;
+        var.name = name; 
+        var.hasValue = false;
+        if(i==sz)
+            vArgs.push_back(var);
+        else
+        {
+            std::string op = std::any_cast<const std::string&>(visit(vChildren[i]));
+            if(op == "=")
+            {
+                ++i;
+                std::any val = getVal(visit(vChildren[i]));
+                var.value = val;
+                var.hasValue = true;
+            }
+            vArgs.push_back(var);
+        }
+    }
+    return vArgs;
+}
+
+std::any EvalVisitor::visitTfpdef(Python3Parser::TfpdefContext *ctx)
+{
+    return ctx->getText();
+}
+
+std::any EvalVisitor::visitBreak_stmt(Python3Parser::Break_stmtContext *ctx)
+{
+    Flow ret = {1};
+    return ret;
+}
+
+std::any EvalVisitor::visitContinue_stmt(Python3Parser::Continue_stmtContext *ctx)
+{
+    Flow ret = {2};
+    return ret;
+}
+
+std::any EvalVisitor::visitReturn_stmt(Python3Parser::Return_stmtContext *ctx)
+{
+    if(ctx->testlist() == nullptr)
+        return (Flow){3};
+    return (Flow){4,visit(ctx->testlist())};
+}
+
+std::any EvalVisitor::findName(const std::string& name)
+{
+    auto it = localVar.find(name);
+    if(it != localVar.end())
+        return var[it->second];
+    it = mapFunc.find(name);
+    if(it != mapFunc.end())
+        return func[it->second];
+    it = globalVar.find(name);
+    if(it != globalVar.end())
+        return var[it->second];
+    ++numVar;
+    var[numVar] = {numVar, name, std::any(),true};
+    localVar.insert(make_pair(name,numVar));
+    return var[numVar];
+}
+
+void EvalVisitor::Bind(std::any& lhs, const std::any& rhs)
+{
+    if(lhs.type() == typeid(Tuple))
+    {
+        if(rhs.type() != typeid(Tuple))
+            throw std::runtime_error("Tuple binded with non-tuple\n");
+        Tuple L = std::any_cast<const Tuple&>(lhs), R = std::any_cast<const Tuple&>(rhs);
+        int szL = L.vTuple.size(), szR = R.vTuple.size();
+        if(szL != szR)
+            throw std::runtime_error("Two tuples have different sizes\n");
+        for(int i=0;i<szL;++i)
+            Bind(L.vTuple[i],R.vTuple[i]);
+    }
+    else if(lhs.type() == typeid(varRef))
+    {
+        int ID = std::any_cast<const varRef&>(lhs).ID;
+        var[ID].value = rhs;
+        var[ID].hasValue = true;
+    }
+    else
+        throw std::runtime_error("binding constants\n");
 }
 
 std::string peel(const std::string str)
@@ -407,9 +663,16 @@ bool toBool(const std::any &val)
 
 std::any getVal(const std::any &val)
 {
-    if (val.type() != typeid(EvalVisitor::varRef))
-        return val;
-    return std::any_cast<const EvalVisitor::varRef &>(val).value;
+    if (val.type() == typeid(EvalVisitor::varRef))
+        return std::any_cast<const EvalVisitor::varRef &>(val).value;
+    if(val.type() == typeid(EvalVisitor::Tuple))
+    {
+        EvalVisitor::Tuple res = std::any_cast<const EvalVisitor::Tuple&>(val);
+        for(auto& p: res.vTuple)
+            p = getVal(p);
+        return res;
+    }
+    return val;
 }
 
 template <typename T>
@@ -473,10 +736,8 @@ bool comp(const std::any &A, const std::any &B, const std::string &op)
 }
 
 // val1 is a string and val2 is an integer
-std::string stringMul(const std::any &val1, const std::any &val2,const std::string& op)
+std::string stringMul(const std::any &val1, const std::any &val2)
 {
-    if(op != "*")
-        throw std::runtime_error("string div or mod\n");
     if(val1.type() != typeid(std::string))
         throw std::runtime_error("val1 is not a string\n");
     if(val2.type() != typeid(LL) && val2.type() != typeid(bool))
@@ -503,6 +764,8 @@ void Print(const std::any& x)
         std::cout << (std::any_cast<bool>(x) ? "True" : "False");
     else if(x.type() == typeid(EvalVisitor::NoneType))
         std::cout << "None";
+    else if(x.type() == typeid(EvalVisitor::varRef))
+        Print(getVal(x));
     /*TODO*/
 }
 
@@ -526,4 +789,160 @@ double stringToDouble(const std::string& str)
         }
     }
     return ans;
+}
+
+std::any calc(const std::any& A,const std::any& B,const std::string& op)
+{
+    if(op == "+")
+    {
+        if(A.type() == typeid(std::string))
+        {
+            if(B.type() != typeid(std::string))
+                throw std::runtime_error("string add non-string\n");
+            return std::any_cast<const std::string&>(A) + std::any_cast<const std::string&>(B);
+        }
+        if(A.type() == typeid(bool) || A.type() == typeid(LL) || A.type() == typeid(double))
+        {
+            if(B.type() != typeid(bool) && B.type() != typeid(LL) && B.type() != typeid(double))
+                throw std::runtime_error("number add non-number\n");
+            if(A.type() == typeid(double) || B.type() == typeid(double))
+                return toNumeric<double>(A) + toNumeric<double>(B);
+            return toNumeric<LL>(A) + toNumeric<LL>(B);
+        }
+        throw std::runtime_error("add type error\n");
+    }
+    if(op == "-")
+    {
+        if(A.type() == typeid(bool) || A.type() == typeid(LL) || A.type() == typeid(double))
+        {
+            if(B.type() != typeid(bool) && B.type() != typeid(LL) && B.type() != typeid(double))
+                throw std::runtime_error("number minus non-number\n");
+            if(A.type() == typeid(double) || B.type() == typeid(double))
+                return toNumeric<double>(A) - toNumeric<double>(B);
+            return toNumeric<LL>(A) - toNumeric<LL>(B);
+        }
+        throw std::runtime_error("minus type error\n");
+    }
+    if(op == "*")
+    {
+        if(A.type() == typeid(std::string))
+            return stringMul(A,B);
+        if(B.type() == typeid(std::string))
+            return stringMul(B,A);
+        if(A.type() == typeid(bool) || A.type() == typeid(LL) || A.type() == typeid(double))
+        {
+            if(B.type() != typeid(bool) && B.type() != typeid(LL) && B.type() != typeid(double))
+                throw std::runtime_error("number mul non-number\n");
+            if(A.type() == typeid(double) || B.type() == typeid(double))
+                return toNumeric<double>(A) * toNumeric<double>(B);
+            return toNumeric<LL>(A) * toNumeric<LL>(B);
+        }
+        throw std::runtime_error("mul type error\n");
+    }
+    if(op == "/")
+    {
+        if(A.type() == typeid(bool) || A.type() == typeid(LL) || A.type() == typeid(double))
+        {
+            if(B.type() != typeid(bool) && B.type() != typeid(LL) && B.type() != typeid(double))
+                throw std::runtime_error("number div non-number\n");
+            return toNumeric<double>(A) / toNumeric<double>(B);
+        }
+        throw std::runtime_error("div type error\n");
+    }
+    if(op == "//")
+    {
+        if(A.type() == typeid(bool) || A.type() == typeid(LL) || A.type() == typeid(double))
+        {
+            if(B.type() != typeid(bool) && B.type() != typeid(LL) && B.type() != typeid(double))
+                throw std::runtime_error("number floor-div non-number\n");
+            if(A.type() == typeid(double) || B.type() == typeid(double))
+            {
+                double ans = toNumeric<double>(A) / toNumeric<double>(B);
+                return round(ans);
+            }
+            return toNumeric<LL>(A) / toNumeric<LL>(B);
+        }
+        throw std::runtime_error("floor-div type error\n");
+    }
+    if(op == "%")
+    {
+        if(A.type() == typeid(bool) || A.type() == typeid(LL) || A.type() == typeid(double))
+        {
+            if(B.type() != typeid(bool) && B.type() != typeid(LL) && B.type() != typeid(double))
+                throw std::runtime_error("number mod non-number\n");
+            if(A.type() == typeid(double) || B.type() == typeid(double))
+            {
+                double doubleA = toNumeric<double>(A), doubleB = toNumeric<double>(B);
+                double quot = round(doubleA / doubleB);
+                return doubleA - quot * doubleB;
+            }
+            return toNumeric<LL>(A) % toNumeric<LL>(B);
+        }
+        throw std::runtime_error("mod type error\n");
+    }
+    throw std::runtime_error("operator not found\n");
+}
+
+std::string unescape(const std::string& str)
+{
+    std::string res;
+    int len = str.length();
+    for(int i=0;i<len;++i)
+    {
+        if(str[i] == '\\')
+        {
+            ++i;
+            if(str[i] == '\\')
+                res.push_back('\\');
+            else if(str[i] == 'n')
+                res.push_back('\n');
+            else if(str[i] == 't')
+                res.push_back('\t');
+            // including \", \'
+            else
+                res.push_back(str[i]);
+        }
+        else if(str[i] == '{')
+        {
+            res.push_back('{');
+            ++i;
+        }
+        else if(str[i] == '}')
+        {
+            res.push_back('}');
+            ++i;
+        }
+        else 
+            res.push_back(str[i]);
+    }
+    return res;
+}
+
+std::string toString(const std::any& x)
+{
+    if(x.type() == typeid(bool))
+    {
+        if(std::any_cast<bool>(x))
+            return "True";
+        return "False";
+    }
+    if(x.type() == typeid(std::string))
+        return std::any_cast<const std::string&>(x);
+    if(x.type() == typeid(EvalVisitor::NoneType))
+        return "None";
+    if(x.type() == typeid(LL))
+    {
+        LL val = std::any_cast<const LL&>(x);
+        std::stringstream ss;
+        ss << val;
+        return ss.str();
+    }
+    if(x.type() == typeid(double))
+    {
+        double val = std::any_cast<double>(x);
+        std::stringstream ss;
+        ss << std::fixed << std::setprecision(6) << val;
+        return ss.str();
+    }
+    return std::string();
 }
