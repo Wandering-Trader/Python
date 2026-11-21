@@ -886,8 +886,8 @@ std::any calc(const std::any& A,const std::any& B,const std::string& op)
 {
     if(A.type() == typeid(EvalVisitor::Tuple) || B.type() == typeid(EvalVisitor::Tuple))
     {
-        if(A.type() != typeid(EvalVisitor::Tuple) || B.type() != typeid(EvalVisitor::Tuple))
-            return std::any();
+        // if(A.type() != typeid(EvalVisitor::Tuple) || B.type() != typeid(EvalVisitor::Tuple))
+        //     return std::any();
         EvalVisitor::Tuple x = std::any_cast<const EvalVisitor::Tuple&>(A),y = std::any_cast<const EvalVisitor::Tuple&>(B);
         if(x.size != y.size)
             std::cout << "pass";
