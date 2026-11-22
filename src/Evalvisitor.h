@@ -103,7 +103,6 @@ template <typename T>
 T toNumeric(const std::any& val);
 std::string stringMul(const std::any&,const std::any&);
 void Print(const std::any&);
-double stringToDouble(const std::string&);
 std::any calc(const std::any&,const std::any&,const std::string&);
 std::string unescape(const std::string&,bool);
 std::string toString(const std::any&);

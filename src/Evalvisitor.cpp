@@ -14,7 +14,7 @@ std::any EvalVisitor::visitAtom(Python3Parser::AtomContext *ctx)
         std::string val = ctx->NUMBER()->getText();
         if(val.find('.') != val.npos)
         {
-            double x = stringToDouble(val);
+            double x = std::stod(val);
             return x;
         }
         LL x(val);
@@ -85,7 +85,7 @@ std::any EvalVisitor::visitAtom_expr(Python3Parser::Atom_exprContext *ctx)
             if(res.type() == typeid(LL) || res.type() == typeid(double) || res.type() == typeid(bool))
                 return toNumeric<double>(res);
             if(res.type() == typeid(std::string))
-                return stringToDouble(std::any_cast<const std::string&>(res));
+                return std::stod(std::any_cast<const std::string&>(res));
             std::cout << "pass";
         }
         if(name == "str")
@@ -308,21 +308,13 @@ std::any EvalVisitor::visitArith_expr(Python3Parser::Arith_exprContext *ctx)
     std::any res = visit(vTerm[0]);
     if (szArith == 0)
         return res;
-    std::vector<std::any> vArithRes;
     // preprocess the first vertex
-    res = getVal(res);
-    vArithRes.push_back(res);
+    std::any ans = getVal(res);
     // now process the following ones
-    for (int i = 1; i < szArith + 1; ++i)
-    {
-        auto val = getVal(visit(vTerm[i]));
-        vArithRes.push_back(val);
-    }
-    std::any ans = vArithRes[0];
     for(int i = 0;i < szArith;++i)
     {
         std::string op = std::any_cast<const std::string&>(visit(vArith[i]));
-        ans = calc(ans,vArithRes[i+1],op);
+        ans = calc(ans,getVal(visit(vTerm[i+1])),op);
     }
     return ans;
 }
@@ -340,25 +332,10 @@ std::any EvalVisitor::visitTerm(Python3Parser::TermContext *ctx)
     std::any res0 = visit(vFactor[0]);
     if (szTerm == 0)
         return res0;
-    std::vector<std::any> vFactorRes;
-    std::vector<std::string> Op;
-    // preprocess res0
-    res0 = getVal(res0);
-    vFactorRes.push_back(res0);
     // now process the following ones
-    for (int i = 1; i < szTerm + 1; ++i)
-    {
-        auto val = getVal(visit(vFactor[i]));
-        vFactorRes.push_back(val);
-    }
-    for(int i=0;i<szTerm;++i)
-    {
-        std::string op = std::any_cast<const std::string&>(visit(vTerm[i]));
-        Op.push_back(op);
-    }
-    std::any ans = vFactorRes[0];
+    std::any ans = getVal(res0);
     for(int i = 0;i < szTerm;++i)
-        ans = calc(ans,vFactorRes[i+1],Op[i]);
+        ans = calc(ans,getVal(visit(vFactor[i+1])),std::any_cast<const std::string&>(visit(vTerm[i])));
     return ans;
 }
 
@@ -538,7 +515,6 @@ std::any EvalVisitor::visitFuncdef(Python3Parser::FuncdefContext *ctx)
     std::string funcName = std::any_cast<const std::string&>(visit(ctx->NAME()));
     if(funcName == "print" || funcName == "str" || funcName == "int" || funcName == "float" || funcName == "bool")
         std::cout << "pass";
-    localVar.erase(funcName);
     auto it = mapFunc.find(funcName);
     int funcID;
     if(it == mapFunc.end())
@@ -832,33 +808,6 @@ void Print(const std::any& x)
     else if(x.type() == typeid(EvalVisitor::varRef))
         Print(getVal(x));
     /*TODO*/
-}
-
-double stringToDouble(const std::string& str)
-{
-    double base = 1.0,ans = 0;
-    bool dot = false,neg = false;
-    if(str[0] == '-')
-        return -stringToDouble(str.substr(1));
-    for(char c:str)
-    {
-        if(c == '.')
-        {
-            dot = true;
-            continue;
-        }
-        if(!isdigit(c))
-            continue;
-        if(!dot)
-            ans = ans * 10 + c - '0';
-        else
-        {
-            base /= 10;
-            ans += base * (c - '0');
-        }
-    }
-    if(neg) ans = -ans;
-    return ans;
 }
 
 std::any calc(const std::any& A,const std::any& B,const std::string& op)
