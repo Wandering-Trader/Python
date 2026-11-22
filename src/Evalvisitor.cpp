@@ -92,10 +92,11 @@ std::any EvalVisitor::visitAtom_expr(Python3Parser::Atom_exprContext *ctx)
             return para.empty() ? "" : toString(getVal(para[0]));
         if(name == "bool")
             return para.empty() ? false : toBool(getVal(para[0]));
-        std::any res = visit(ctx->atom());
-        if(res.type() != typeid(Func))
-            return std::any();
-        auto func = std::any_cast<const Func&>(res);
+            
+        auto it = mapFunc.find(name);
+        if(it == mapFunc.end())
+            throw std::runtime_error("function not founded\n");
+        Func f = func[it->second];
         // change scope
         if(scopeDepth == 0)
             globalVar = localVar;
@@ -106,9 +107,9 @@ std::any EvalVisitor::visitAtom_expr(Python3Parser::Atom_exprContext *ctx)
         // create new scope
         bool keyword = false;
         int sz = para.size();
-        if(sz > func.vArg.size())
+        if(sz > f.vArg.size())
             std::cout << "pass";
-        std::vector<bool> hasValue(func.vArg.size());
+        std::vector<bool> hasValue(f.vArg.size());
         for(int i=0;i<sz;++i)
         {
             // keyword
@@ -117,8 +118,8 @@ std::any EvalVisitor::visitAtom_expr(Python3Parser::Atom_exprContext *ctx)
             {
                 keyword = true;
                 varRef tmpVar = std::any_cast<const varRef&>(p);
-                auto it = func.mapArg.find(tmpVar.name);
-                if(it == func.mapArg.end())
+                auto it = f.mapArg.find(tmpVar.name);
+                if(it == f.mapArg.end())
                     std::cout << "pass";
                 int id = it->second;
                 if(hasValue[id])
@@ -133,26 +134,26 @@ std::any EvalVisitor::visitAtom_expr(Python3Parser::Atom_exprContext *ctx)
             {
                 if(keyword)
                     std::cout << "pass";
-                std::string name = func.vArg[i].name;
+                std::string name = f.vArg[i].name;
                 ++numVar;
                 var[numVar] = {numVar,name,p};
                 localVar.insert(make_pair(name,numVar));
                 hasValue[i] = true;
             }
         }
-        int szArgs = func.vArg.size();
+        int szArgs = f.vArg.size();
         for(int i=0;i<szArgs;++i)
         {
             if(!hasValue[i])
             {
-                if(!func.vArg[i].hasValue)
-                    std::cout << "pass";
+                if(!f.vArg[i].hasValue)
+                    throw std::runtime_error("argument have no value");
                 ++numVar;
-                var[numVar] = {numVar,func.vArg[i].name,func.vArg[i].value,true};
-                localVar.insert(make_pair(func.vArg[i].name,numVar));
+                var[numVar] = {numVar,f.vArg[i].name,f.vArg[i].value,true};
+                localVar.insert(make_pair(f.vArg[i].name,numVar));
             }
         }
-        std::any ret = visit(func.suite);
+        std::any ret = visit(f.suite);
         numVar -= localVar.size();
         if(scopeDepth == 1)
             localVar = globalVar;
@@ -173,26 +174,6 @@ std::any EvalVisitor::visitAtom_expr(Python3Parser::Atom_exprContext *ctx)
         return NoneType();
     }
     std::any res = visitAtom(ctx->atom());
-    if(res.type() == typeid(Func))
-    {
-        if(scopeDepth == 0)
-        {
-            // delete the func and add the new variable
-            std::string name = std::any_cast<Func>(res).name;
-            mapFunc.erase(name);
-            localVar.insert(make_pair(name,++numVar));
-            var[numVar] = {numVar,name,std::any(),false};
-            return var[numVar];
-        }
-        else
-        {
-            // don't delete the func, just add the new variable
-            std::string name = std::any_cast<Func>(res).name;
-            localVar.insert(make_pair(name,++numVar));
-            var[numVar] = {numVar,name,std::any(),false};
-            return var[numVar];
-        }
-    }
     return res;
 }
 
@@ -417,7 +398,6 @@ std::any EvalVisitor::visitExpr_stmt(Python3Parser::Expr_stmtContext *ctx)
         std::vector<std::any> vTerm;
         if(sz == 1)
             return visit(vTestlist[0]);
-
         // calculate from right to left
         std::any val = visit(vTestlist.back());
         std::any res;
@@ -682,9 +662,6 @@ std::any EvalVisitor::findName(const std::string &name)
     auto it = localVar.find(name);
     if(it != localVar.end())
         return var[it->second];
-    it = mapFunc.find(name);
-    if(it != mapFunc.end())
-        return func[it->second];
     it = globalVar.find(name);
     if(it != globalVar.end())
         return var[it->second];
