@@ -60,7 +60,7 @@ std::any EvalVisitor::visitAtom_expr(Python3Parser::Atom_exprContext *ctx)
                     std::cout << " ";
             }
             std::cout << "\n";
-            return (Flow){0};
+            return NoneType();
         }
         if(name == "int")
         {
