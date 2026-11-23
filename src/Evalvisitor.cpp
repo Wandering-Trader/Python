@@ -12,7 +12,7 @@ std::any EvalVisitor::visitAtom(Python3Parser::AtomContext *ctx)
     if (ctx->NUMBER() != nullptr)
     {
         std::string val = ctx->NUMBER()->getText();
-        if(val.find('.') != val.npos)
+        if(val.find('.') != val.npos || val.find('e') != val.npos || val.find('E') != val.npos)
         {
             double x = std::stod(val);
             return x;
