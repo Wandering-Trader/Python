@@ -282,12 +282,12 @@ std::any EvalVisitor::visitComparison(Python3Parser::ComparisonContext *ctx)
     int szArith = vArith.size();
     if (!szOp)
         return visit(vArith[0]);
-    auto nodeLHS = visit(vArith[0]);
+    auto nodeLHS = getVal(visit(vArith[0]));
     for (int i = 0; i < szOp; ++i)
     {
         auto nodeOp = visit(vCompOp[i]);
         std::string op = std::any_cast<const std::string &>(nodeOp);
-        auto nodeRHS = visit(vArith[i + 1]);
+        auto nodeRHS = getVal(visit(vArith[i + 1]));
         if (!comp(nodeLHS, nodeRHS, op))
             return false;
         nodeLHS = nodeRHS;
@@ -390,10 +390,12 @@ std::any EvalVisitor::visitExpr_stmt(Python3Parser::Expr_stmtContext *ctx)
     else
     {
         auto vTestlist = ctx->testlist();
-        std::any res0 = visit(vTestlist[0]), res1 = visit(vTestlist[1]);
+        std::any res0 = visit(vTestlist[0]);
+        std::any val0 = getVal(res0);
+        std::any res1 = getVal(visit(vTestlist[1]));
         std::string op = std::any_cast<std::string>(visit(ctx->augassign()));
         op.pop_back();
-        std::any res = calc(getVal(res0),getVal(res1),op);
+        std::any res = calc(val0,res1,op);
         Bind(res0,res);
     }
     return std::any();
