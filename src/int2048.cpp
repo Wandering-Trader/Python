@@ -385,7 +385,7 @@ namespace sjtu
     double turnDouble(const int2048 &B)
     {
         double ans = 0;
-        for (int i = 0; i < B.len; ++i)
+        for (int i = B.len -1 ; ~i ; --i)
             ans = ans * int2048::BASE + B.num[i];
         if (B.neg)
             ans = -ans;
